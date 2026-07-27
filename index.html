@@ -13,7 +13,7 @@
     #canvas-container { width: 100%; height: 100%; cursor: grab; touch-action: none; }
     #canvas-container:active { cursor: grabbing; }
 
-    /* Left Edge Hover / Touch Trigger Zone */
+    /* Touch / Hover Trigger Zone */
     .edge-trigger {
       position: absolute;
       top: 0;
@@ -32,15 +32,16 @@
       max-width: 80vw;
       height: 100%;
       z-index: 10;
-      background: rgba(18, 18, 18, 0.92);
+      background: rgba(18, 18, 18, 0.95);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border-right: 1px solid rgba(255, 255, 255, 0.1);
       display: flex;
       flex-direction: column;
-      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
       box-shadow: 4px 0 20px rgba(0,0,0,0.5);
       touch-action: pan-y;
+      will-change: transform;
     }
 
     .sidebar.collapsed { transform: translateX(-100%); }
@@ -49,11 +50,14 @@
       padding: 20px;
       border-bottom: 1px solid rgba(255,255,255,0.1);
       color: #fff;
+      flex-shrink: 0;
     }
     .sidebar-header h2 { font-size: 1.1rem; font-weight: 600; }
 
+    /* Gallery List - Fixed Height for ~8 Items */
     .gallery-list {
       flex: 1;
+      max-height: calc((142px * 8) + (12px * 7) + 30px);
       overflow-y: auto;
       padding: 15px;
       display: flex;
@@ -61,6 +65,28 @@
       gap: 12px;
       -webkit-overflow-scrolling: touch;
       touch-action: pan-y;
+
+      /* Standard CSS Scrollbar (Firefox) */
+      scrollbar-width: auto;
+      scrollbar-color: rgba(255, 255, 255, 0.4) rgba(255, 255, 255, 0.05);
+    }
+
+    /* WebKit (Chrome / Safari / Edge) Modern White Scrollbar - Doubled Thickness */
+    .gallery-list::-webkit-scrollbar {
+      width: 12px;
+    }
+    .gallery-list::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      margin: 4px 0;
+    }
+    .gallery-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.4);
+      border-radius: 12px;
+      transition: background 0.2s ease;
+    }
+    .gallery-list::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.8);
     }
 
     .thumb-card {
@@ -69,21 +95,25 @@
       border-radius: 8px;
       overflow: hidden;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+      will-change: transform;
+      flex-shrink: 0;
+      height: 142px;
     }
 
     .thumb-card:hover, .thumb-card:active {
       background: rgba(255, 255, 255, 0.12);
+      transform: scale(0.98);
     }
 
     .thumb-card.active {
       border-color: #2563eb;
-      background: rgba(37, 99, 235, 0.2);
+      background: rgba(37, 99, 235, 0.25);
     }
 
     .thumb-card img {
       width: 100%;
-      height: 110px;
+      height: 104px;
       object-fit: cover;
       display: block;
     }
@@ -95,6 +125,7 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      height: 34px;
     }
 
     .empty-state {
@@ -122,9 +153,16 @@
   <div id="canvas-container"></div>
 
   <script>
-    let scene, camera, renderer, controls, sphereMesh;
+    let scene, camera, renderer, controls;
+    let mainMesh, fadeMesh;
     const DEFAULT_FOV = 75, MIN_FOV = 30, MAX_FOV = 100;
     let targetFov = DEFAULT_FOV;
+
+    const textureCache = new Map();
+    const textureLoader = new THREE.TextureLoader();
+    let isFading = false;
+    let fadeFactor = 0;
+    let allAssets = [];
 
     function init() {
       const container = document.getElementById('canvas-container');
@@ -138,27 +176,26 @@
       container.appendChild(renderer.domElement);
 
       controls = new THREE.OrbitControls(camera, renderer.domElement);
-      controls.enableZoom = true; // Enabled for mobile pinch-to-zoom
+      controls.enableZoom = true;
       controls.enablePan = false;
       controls.rotateSpeed = -0.4;
       controls.zoomSpeed = 0.8;
       controls.enableDamping = true;
-      controls.dampingFactor = 0.08;
-
-      // Prevent camera from zooming past the inner sphere bounds
+      controls.dampingFactor = 0.1;
       controls.minDistance = 0.001;
       controls.maxDistance = 0.001;
 
-      // Map pinch zoom to Field of View (FOV) adjustments
-      controls.addEventListener('change', () => {
-        // Keeps orbit camera fixed at origin while zoom scales FOV
-      });
-
-      const geometry = new THREE.SphereGeometry(500, 128, 64);
+      const geometry = new THREE.SphereGeometry(500, 64, 32);
       geometry.scale(-1, 1, 1);
-      const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
-      sphereMesh = new THREE.Mesh(geometry, material);
-      scene.add(sphereMesh);
+
+      const mainMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 1.0 });
+      mainMesh = new THREE.Mesh(geometry, mainMaterial);
+      scene.add(mainMesh);
+
+      const fadeMaterial = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.0 });
+      fadeMesh = new THREE.Mesh(geometry, fadeMaterial);
+      fadeMesh.renderOrder = 1;
+      scene.add(fadeMesh);
 
       window.addEventListener('resize', onWindowResize);
       window.addEventListener('wheel', onMouseWheel, { passive: false });
@@ -170,7 +207,36 @@
       animate();
     }
 
-    // Handles multi-touch pinch zooming specifically for FOV adjustments on mobile
+    function fetchTexture(url) {
+      if (textureCache.has(url)) {
+        return Promise.resolve(textureCache.get(url));
+      }
+      return new Promise((resolve) => {
+        textureLoader.load(url, (texture) => {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.minFilter = THREE.LinearFilter;
+          texture.magFilter = THREE.LinearFilter;
+          texture.generateMipmaps = false;
+          
+          const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
+          if (maxAnisotropy > 0) texture.anisotropy = Math.min(maxAnisotropy, 8);
+
+          textureCache.set(url, texture);
+          resolve(texture);
+        });
+      });
+    }
+
+    function switchPanorama(url) {
+      fetchTexture(url).then((newTexture) => {
+        fadeMesh.material.map = newTexture;
+        fadeMesh.material.needsUpdate = true;
+        fadeMesh.material.opacity = 0;
+        isFading = true;
+        fadeFactor = 0;
+      });
+    }
+
     function setupMobileTouchZoom(container) {
       let initialPinchDistance = 0;
       let initialFov = DEFAULT_FOV;
@@ -196,9 +262,7 @@
       }, { passive: true });
 
       container.addEventListener('touchend', (e) => {
-        if (e.touches.length < 2) {
-          initialPinchDistance = 0;
-        }
+        if (e.touches.length < 2) initialPinchDistance = 0;
       }, { passive: true });
     }
 
@@ -206,11 +270,9 @@
       const sidebar = document.getElementById('sidebar');
       const trigger = document.getElementById('edge-trigger');
 
-      // Desktop Hover Setup
       trigger.addEventListener('mouseenter', openSidebar);
       sidebar.addEventListener('mouseleave', closeSidebar);
 
-      // Mobile Touch Swipe Setup (Single Touch)
       let touchStartX = 0;
       let touchStartY = 0;
 
@@ -244,57 +306,50 @@
       const gallery = document.getElementById('gallery');
       try {
         const response = await fetch('/api/discover-assets');
-        const filenames = await response.json();
+        allAssets = await response.json();
 
-        if (!filenames || filenames.length === 0) {
+        if (!allAssets || allAssets.length === 0) {
           gallery.innerHTML = '<div class="empty-state">No images found in <b>assets/</b> folder. Add images and refresh.</div>';
           return;
         }
 
         gallery.innerHTML = '';
-        filenames.forEach((filename, index) => {
+        allAssets.forEach((filename, index) => {
           const imgPath = `./assets/${filename}`;
           const card = document.createElement('div');
           card.className = 'thumb-card';
           if (index === 0) card.classList.add('active');
 
           card.innerHTML = `
-            <img src="${imgPath}" alt="${filename}" />
+            <img src="${imgPath}" alt="${filename}" loading="lazy" />
             <div class="title">${filename}</div>
           `;
 
           card.onclick = () => {
             document.querySelectorAll('.thumb-card').forEach(c => c.classList.remove('active'));
             card.classList.add('active');
-            loadPanorama(imgPath);
+            switchPanorama(imgPath);
             closeSidebar();
           };
 
           gallery.appendChild(card);
         });
 
-        loadPanorama(`./assets/${filenames[0]}`);
+        // Load initial panorama
+        const initialPath = `./assets/${allAssets[0]}`;
+        fetchTexture(initialPath).then(tex => {
+          mainMesh.material.map = tex;
+          mainMesh.material.needsUpdate = true;
+        });
+
+        // Preload remaining assets in background
+        setTimeout(() => {
+          allAssets.slice(1).forEach(filename => fetchTexture(`./assets/${filename}`));
+        }, 1000);
 
       } catch (err) {
         gallery.innerHTML = '<div class="empty-state" style="color:#ef4444;">Error connecting to auto-discovery server.</div>';
       }
-    }
-
-    function loadPanorama(imageSrc) {
-      const loader = new THREE.TextureLoader();
-      loader.load(imageSrc, (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        texture.generateMipmaps = false;
-
-        const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
-        if (maxAnisotropy > 0) texture.anisotropy = maxAnisotropy;
-
-        sphereMesh.material.map = texture;
-        sphereMesh.material.color.setHex(0xffffff);
-        sphereMesh.material.needsUpdate = true;
-      });
     }
 
     function openSidebar() {
@@ -306,6 +361,11 @@
     }
 
     function onMouseWheel(event) {
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar && sidebar.contains(event.target)) {
+        return;
+      }
+
       event.preventDefault();
       targetFov += event.deltaY * 0.05;
       targetFov = Math.max(MIN_FOV, Math.min(MAX_FOV, targetFov));
@@ -323,10 +383,26 @@
 
     function animate() {
       requestAnimationFrame(animate);
+
+      if (isFading) {
+        fadeFactor += 0.08;
+        if (fadeFactor >= 1) {
+          fadeFactor = 1;
+          isFading = false;
+
+          mainMesh.material.map = fadeMesh.material.map;
+          mainMesh.material.needsUpdate = true;
+          fadeMesh.material.opacity = 0;
+        } else {
+          fadeMesh.material.opacity = fadeFactor;
+        }
+      }
+
       if (Math.abs(camera.fov - targetFov) > 0.01) {
-        camera.fov += (targetFov - camera.fov) * 0.1;
+        camera.fov += (targetFov - camera.fov) * 0.15;
         camera.updateProjectionMatrix();
       }
+
       controls.update();
       renderer.render(scene, camera);
     }
