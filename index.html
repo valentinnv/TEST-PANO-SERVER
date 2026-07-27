@@ -2,23 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>360° Panorama Auto-Discovery Gallery</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body, html { width: 100%; height: 100%; overflow: hidden; background-color: #0d0d0d; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background-color: #0d0d0d; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; touch-action: none; }
     
     #canvas-container { width: 100%; height: 100%; cursor: grab; }
     #canvas-container:active { cursor: grabbing; }
 
-    /* Left Edge Hover Trigger Zone */
+    /* Left Edge Hover / Touch Trigger Zone */
     .edge-trigger {
       position: absolute;
       top: 0;
       left: 0;
-      width: 25px;
+      width: 35px; /* Slightly wider for easier touch targeting */
       height: 100%;
       z-index: 12;
       background: transparent;
@@ -29,10 +29,12 @@
       top: 0;
       left: 0;
       width: 280px;
+      max-width: 80vw; /* Adapts cleanly to narrow phone screens */
       height: 100%;
       z-index: 10;
-      background: rgba(18, 18, 18, 0.9);
+      background: rgba(18, 18, 18, 0.92);
       backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border-right: 1px solid rgba(255, 255, 255, 0.1);
       display: flex;
       flex-direction: column;
@@ -56,6 +58,7 @@
       display: flex;
       flex-direction: column;
       gap: 12px;
+      -webkit-overflow-scrolling: touch;
     }
 
     .thumb-card {
@@ -67,9 +70,8 @@
       transition: all 0.2s ease;
     }
 
-    .thumb-card:hover {
+    .thumb-card:hover, .thumb-card:active {
       background: rgba(255, 255, 255, 0.12);
-      transform: translateY(-2px);
     }
 
     .thumb-card.active {
@@ -104,7 +106,6 @@
 </head>
 <body>
 
-  <!-- Invisible hotspot along the left edge -->
   <div class="edge-trigger" id="edge-trigger"></div>
 
   <div class="sidebar collapsed" id="sidebar">
@@ -151,24 +152,47 @@
       window.addEventListener('wheel', onMouseWheel, { passive: false });
       window.addEventListener('dblclick', onDoubleClick);
 
-      setupHoverBehavior();
+      setupInteractions();
       autoDiscoverAssets();
       animate();
     }
 
-    function setupHoverBehavior() {
+    function setupInteractions() {
       const sidebar = document.getElementById('sidebar');
       const trigger = document.getElementById('edge-trigger');
 
-      // Open sidebar when hovering over the left screen edge
-      trigger.addEventListener('mouseenter', () => {
-        openSidebar();
-      });
+      // 1. Desktop Hover Setup
+      trigger.addEventListener('mouseenter', openSidebar);
+      sidebar.addEventListener('mouseleave', closeSidebar);
 
-      // Close sidebar when mouse leaves the sidebar container
-      sidebar.addEventListener('mouseleave', () => {
-        closeSidebar();
-      });
+      // 2. Mobile Touch Swipe Setup
+      let touchStartX = 0;
+      let touchStartY = 0;
+
+      window.addEventListener('touchstart', (e) => {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+      }, { passive: true });
+
+      window.addEventListener('touchend', (e) => {
+        const touchEndX = e.changedTouches[0].clientX;
+        const touchEndY = e.changedTouches[0].clientY;
+
+        const deltaX = touchEndX - touchStartX;
+        const deltaY = touchEndY - touchStartY;
+
+        // Ensure horizontal swipe is larger than vertical movement
+        if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 40) {
+          // Swipe Right from near left edge -> Open Sidebar
+          if (deltaX > 0 && touchStartX < 50) {
+            openSidebar();
+          }
+          // Swipe Left anywhere -> Close Sidebar
+          else if (deltaX < 0) {
+            closeSidebar();
+          }
+        }
+      }, { passive: true });
     }
 
     async function autoDiscoverAssets() {
