@@ -54,9 +54,9 @@
     }
     .sidebar-header h2 { font-size: 1.1rem; font-weight: 600; }
 
-    /* Fullscreen Button - Hidden by default on PC */
+    /* Fullscreen Button - Visible on both Desktop and Mobile */
     .fullscreen-btn {
-      display: none;
+      display: flex;
       position: absolute;
       top: 15px;
       right: 15px;
@@ -78,23 +78,20 @@
       transition: background 0.2s ease, transform 0.1s ease, opacity 0.2s ease, visibility 0.2s ease;
     }
 
+    .fullscreen-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
     .fullscreen-btn:active {
-      background: rgba(255, 255, 255, 0.25);
+      background: rgba(255, 255, 255, 0.3);
       transform: scale(0.95);
     }
 
-    /* Hide button when active in Fullscreen mode */
+    /* Hide button completely when user enters Fullscreen mode */
     .fullscreen-btn.is-hidden {
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
-    }
-
-    /* Display Fullscreen Button strictly on Mobile / Touch Screens */
-    @media (max-width: 768px), (pointer: coarse) {
-      .fullscreen-btn {
-        display: flex;
-      }
     }
 
     /* Gallery List - Fixed Height for ~8 Items */
@@ -270,7 +267,7 @@
         }
       });
 
-      // Listen for fullscreen state changes to toggle button visibility
+      // Hide button when entering fullscreen, show when exiting
       const handleFullscreenChange = () => {
         const isFullscreen = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
         if (isFullscreen) {
