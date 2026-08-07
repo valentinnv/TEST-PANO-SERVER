@@ -54,6 +54,42 @@
     }
     .sidebar-header h2 { font-size: 1.1rem; font-weight: 600; }
 
+    /* Fullscreen Button - Hidden by default on PC */
+    .fullscreen-btn {
+      display: none;
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      z-index: 15;
+      width: 44px;
+      height: 44px;
+      background: rgba(18, 18, 18, 0.75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 10px;
+      color: #ffffff;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      transition: background 0.2s ease, transform 0.1s ease;
+    }
+
+    .fullscreen-btn:active {
+      background: rgba(255, 255, 255, 0.25);
+      transform: scale(0.95);
+    }
+
+    /* Display Fullscreen Button strictly on Mobile / Touch Screens */
+    @media (max-width: 768px), (pointer: coarse) {
+      .fullscreen-btn {
+        display: flex;
+      }
+    }
+
     /* Gallery List - Fixed Height for ~8 Items */
     .gallery-list {
       flex: 1;
@@ -139,6 +175,12 @@
 </head>
 <body>
 
+  <button class="fullscreen-btn" id="fullscreen-btn" aria-label="Toggle Fullscreen">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+    </svg>
+  </button>
+
   <div class="edge-trigger" id="edge-trigger"></div>
 
   <div class="sidebar collapsed" id="sidebar">
@@ -202,9 +244,29 @@
       window.addEventListener('dblclick', onDoubleClick);
 
       setupInteractions();
+      setupFullscreenButton();
       setupMobileTouchZoom(container);
       autoDiscoverAssets();
       animate();
+    }
+
+    function setupFullscreenButton() {
+      const btn = document.getElementById('fullscreen-btn');
+      btn.addEventListener('click', () => {
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+          if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+          } else if (document.documentElement.webkitRequestFullscreen) {
+            document.documentElement.webkitRequestFullscreen();
+          }
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen();
+          } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+          }
+        }
+      });
     }
 
     function fetchTexture(url) {
